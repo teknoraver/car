@@ -1,16 +1,18 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
-enum file_type {
-	FILE_TYPE,
-	DIR_TYPE
-};
+#define FILE_TYPE	1
+#define DIR_TYPE	2
+
+#define COW_ALIGNMENT	4096
 
 struct entry {
-	enum file_type type;
-	size_t namelen;
-	size_t datalen;
+	uint8_t type;
+	uint32_t namelen;
+	uint16_t padding;
+	uint64_t datasize;
 	char name[];
 };
 

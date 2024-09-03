@@ -9,6 +9,26 @@
 
 #include "car.h"
 
+static int copy_data(char *file, int outfd)
+{
+	int infd;
+	char buf[4096];
+	ssize_t n;
+
+	infd = open(file, O_RDONLY);
+	if (infd == -1) {
+		perror("open");
+		return -1;
+	}
+
+	while ((n = read(infd, buf, sizeof(buf))) > 0)
+		write(outfd, buf, n);
+
+	close(infd);
+
+	return 0;
+}
+
 static int store_dir(char *file, int outfd)
 {
 	printf("Dir: %s\n", file);
@@ -19,6 +39,32 @@ static int store_dir(char *file, int outfd)
 static int store_file(char *file, int outfd)
 {
 	printf("File: %s\n", file);
+	struct stat file_stat;
+	struct entry entry = {
+		.type = FILE_TYPE,
+		.namelen = strlen(file),
+	};
+	size_t pos;
+
+	if (stat(file, &file_stat) == -1) {
+		perror("stat");
+		return -1;
+	}
+
+	entry.datasize = file_stat.st_size;
+
+	pos = lseek(outfd, 0, SEEK_CUR);
+	pos += sizeof(entry) + entry.namelen + 1;
+	if (pos % COW_ALIGNMENT)
+		entry.padding = COW_ALIGNMENT - (pos % COW_ALIGNMENT);
+
+	write(outfd, &entry, sizeof(entry));
+	write(outfd, file, entry.namelen + 1);
+
+	if (entry.padding)
+		lseek(outfd, entry.padding, SEEK_CUR);
+
+	copy_data(file, outfd);
 
 	return 0;
 }
@@ -49,11 +95,10 @@ static int compress2(char *inputdir, int outfd)
 			return -1;
 		}
 
-		if (S_ISREG(entry_stat.st_mode)) {
+		if (S_ISREG(entry_stat.st_mode))
 			store_file(path, outfd);
-		} else if (S_ISDIR(entry_stat.st_mode)) {
+		else if (S_ISDIR(entry_stat.st_mode))
 			compress2(path, outfd);
-		}
 	}
 
 	closedir(dir);
