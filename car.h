@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #define FILE_TYPE	1
@@ -8,10 +9,12 @@
 
 #define COW_ALIGNMENT	4096
 
+extern bool verbose;
+
 struct entry {
 	uint8_t type;
 	uint32_t namelen;
-	uint16_t padding;
+	uint32_t padding;
 	uint64_t datasize;
 	char name[];
 };

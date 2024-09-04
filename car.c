@@ -5,6 +5,8 @@
 
 #include "car.h"
 
+bool verbose = false;
+
 static void usage(void)
 {
 	fprintf(stderr, "Usage: [-h] [-c] [-x] [file...]\n");
@@ -17,7 +19,7 @@ int main(int argc, char *argv[])
 	bool comp = false, extr = false;
 	char *file = NULL;
 
-	while ((c = getopt(argc, argv, "hcx:f:")) != -1) {
+	while ((c = getopt(argc, argv, "hcx:f:v")) != -1) {
 		switch(c) {
 		case 'h':
 			usage();
@@ -30,6 +32,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			file = optarg;
+			break;
+		case 'v':
+			verbose = true;
 			break;
 		case '?':
 		default:
