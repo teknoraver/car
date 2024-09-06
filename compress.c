@@ -8,8 +8,12 @@
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 
 #include "car.h"
+
+static size_t dataoffset;
+static size_t header_size;
 
 static int copy_data(char *file, int outfd)
 {
@@ -77,6 +81,16 @@ static int store_dir(char *file, int outfd)
 	if (verbose)
 		printf("Dir: %s\n", file);
 
+	struct entry entry = {
+		.type = DIR_TYPE,
+	};
+	uint32_t len = strlen(file);
+
+	entry.namelen = htobe32(len),
+
+	write(outfd, &entry, sizeof(entry));
+	write(outfd, file, len + 1);
+
 	return 0;
 }
 
@@ -86,29 +100,23 @@ static int store_file(char *file, int outfd, size_t datasize)
 		printf("File: %s\n", file);
 	struct entry entry = {
 		.type = FILE_TYPE,
-		.namelen = strlen(file),
+		.size = htobe64(datasize),
 	};
-	size_t pos;
+	uint32_t len = strlen(file);
 
-	entry.datasize = datasize;
+	entry.namelen = htobe32(len),
 
-	pos = lseek(outfd, 0, SEEK_CUR);
-	pos += sizeof(entry) + entry.namelen + 1;
-	if (pos % COW_ALIGNMENT)
-		entry.padding = COW_ALIGNMENT - (pos % COW_ALIGNMENT);
+	entry.offset = htobe64(dataoffset);
+	if (dataoffset % COW_ALIGNMENT)
+		dataoffset += COW_ALIGNMENT - (dataoffset % COW_ALIGNMENT);
 
 	write(outfd, &entry, sizeof(entry));
-	write(outfd, file, entry.namelen + 1);
-
-	if (entry.padding)
-		lseek(outfd, entry.padding, SEEK_CUR);
-
-	reflink_data(file, outfd, entry.datasize, pos + entry.padding);
+	write(outfd, file, len + 1);
 
 	return 0;
 }
 
-static int compress2(char *inputdir, int outfd)
+static int write_header(char *inputdir, int outfd)
 {
 	DIR *dir;
 	struct dirent *entry;
@@ -137,7 +145,27 @@ static int compress2(char *inputdir, int outfd)
 		if (S_ISREG(entry_stat.st_mode))
 			store_file(path, outfd, entry_stat.st_size);
 		else if (S_ISDIR(entry_stat.st_mode))
-			compress2(path, outfd);
+			write_header(path, outfd);
+	}
+
+	closedir(dir);
+
+	return 0;
+}
+
+int reflink_files(int outfd)
+{
+	struct entry entry;
+
+	while ((read(outfd, &entry, sizeof(entry))) > 0) {
+		char path[PATH_MAX];
+
+		if (entry.type == DIR_TYPE) {
+			printf("Dir: %s\n", path);
+			continue;
+		}
+
+		reflink_data(path, outfd, entry.size, entry.offset);
 	}
 
 	closedir(dir);
@@ -147,13 +175,28 @@ static int compress2(char *inputdir, int outfd)
 
 int compress(char *inputdir, char *outputfile)
 {
+	uint32_t magic = htonl(COW_MAGIC);
 	int outfd;
 
-	outfd = creat(outputfile, 0666);
+	outfd = open(outputfile, O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (!outfd) {
 		perror("open");
 		return -1;
 	}
 
-	return compress2(inputdir, outfd);
+	write(outfd, &magic, sizeof(magic));
+
+	write_header(inputdir, outfd);
+
+	header_size = lseek(outfd, 0, SEEK_CUR);
+	if (header_size % COW_ALIGNMENT)
+		header_size += COW_ALIGNMENT - (header_size % COW_ALIGNMENT);
+
+	printf("Header size: %lu\n", header_size);
+
+	lseek(outfd, sizeof(magic), SEEK_SET);
+
+	reflink_files(outfd);
+
+	return 0;
 }
