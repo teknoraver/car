@@ -1,4 +1,4 @@
-module car
+module github.com/teknoraver/car
 
 go 1.18
 
