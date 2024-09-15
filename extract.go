@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 
@@ -18,45 +17,26 @@ func reflinkToFile(e *entry, inFile *os.File) error {
 	}
 	defer out.Close()
 
-	pos, err := inFile.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-	trailpos := e.metadata.offset
-
-	if e.metadata.size >= cowAlignment {
-		fcrange := unix.FileCloneRange{
-			Src_fd:     int64(inFile.Fd()),
-			Src_offset: e.metadata.offset,
-			Src_length: e.metadata.size & ^uint64(cowMask),
-		}
-
-		err = unix.IoctlFileCloneRange(int(out.Fd()), &fcrange)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error reflinking", e.name, err, fcrange)
-			return nil
-		}
-
-		_, err = out.Seek(0, io.SeekEnd)
-		if err != nil {
-			return err
-		}
-		trailpos += fcrange.Src_length
+	if e.metadata.size == 0 {
+		return nil
 	}
 
-	_, err = inFile.Seek(int64(trailpos), io.SeekStart)
-	if err != nil {
-		return err
+	fcrange := unix.FileCloneRange{
+		Src_fd:     int64(inFile.Fd()),
+		Src_offset: e.metadata.offset,
+		Src_length: round4k(e.metadata.size),
 	}
 
-	_, err = io.CopyN(out, inFile, int64(e.metadata.size)&int64(cowMask))
+	err = unix.IoctlFileCloneRange(int(out.Fd()), &fcrange)
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "Error reflinking", e.name, err, fcrange)
+		return nil
 	}
 
-	_, err = inFile.Seek(pos, io.SeekStart)
+	err = unix.Ftruncate(int(out.Fd()), int64(e.metadata.size))
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "Error truncating", e.name, err)
+		return nil
 	}
 
 	return nil
