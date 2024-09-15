@@ -84,10 +84,8 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 	header := genHeader(paths)
 	var padding uint64
 
-	if header.size&cowMask != 0 {
-		padding = cowAlignment - (header.size & cowMask)
-		header.size += padding
-	}
+	padding = cowAlignment - (header.size & cowMask)
+	header.size = round4k(header.size)
 	curpos := header.size
 
 	out := bufio.NewWriter(outFd)
@@ -129,9 +127,7 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 		}
 
 		curpos += header.entries[i].metadata.size + uint64(extradata)
-		if curpos&cowMask != 0 {
-			curpos += cowAlignment - (curpos & cowMask)
-		}
+		curpos = round4k(curpos)
 	}
 	eor := metadata{
 		mode: 0xffffffff,

@@ -25,3 +25,7 @@ type header struct {
 	entries []entry
 	size    uint64
 }
+
+func round4k(size uint64) uint64 {
+	return ((size - 1) | 0xfff) + 1
+}
