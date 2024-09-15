@@ -11,20 +11,20 @@ import (
 )
 
 func reflinkToFile(e *entry, inFile *os.File) error {
-	out, err := os.OpenFile(e.name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fs.FileMode(e.metadata.mode).Perm())
+	out, err := os.OpenFile(e.name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fs.FileMode(e.fixedData.mode).Perm())
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	if e.metadata.size == 0 {
+	if e.fixedData.size == 0 {
 		return nil
 	}
 
 	fcrange := unix.FileCloneRange{
 		Src_fd:     int64(inFile.Fd()),
-		Src_offset: e.metadata.offset,
-		Src_length: round4k(e.metadata.size),
+		Src_offset: e.fixedData.offset,
+		Src_length: round4k(e.fixedData.size),
 	}
 
 	err = unix.IoctlFileCloneRange(int(out.Fd()), &fcrange)
@@ -33,7 +33,7 @@ func reflinkToFile(e *entry, inFile *os.File) error {
 		return nil
 	}
 
-	err = unix.Ftruncate(int(out.Fd()), int64(e.metadata.size))
+	err = unix.Ftruncate(int(out.Fd()), int64(e.fixedData.size))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error truncating", e.name, err)
 		return nil
@@ -60,30 +60,30 @@ func extract(inFile string) error {
 		var e entry
 		var err error
 
-		err = binary.Read(inFd, binary.BigEndian, &e.metadata.mode)
+		err = binary.Read(inFd, binary.BigEndian, &e.fixedData.mode)
 		if err != nil {
 			return err
 		}
-		if e.metadata.mode == EOR {
+		if e.fixedData.mode == EOR {
 			break
 		}
 
-		err = binary.Read(inFd, binary.BigEndian, &e.metadata.offset)
+		err = binary.Read(inFd, binary.BigEndian, &e.fixedData.offset)
 		if err != nil {
 			return err
 		}
 
-		err = binary.Read(inFd, binary.BigEndian, &e.metadata.size)
+		err = binary.Read(inFd, binary.BigEndian, &e.fixedData.size)
 		if err != nil {
 			return err
 		}
 
-		err = binary.Read(inFd, binary.BigEndian, &e.metadata.nameLength)
+		err = binary.Read(inFd, binary.BigEndian, &e.fixedData.nameLength)
 		if err != nil {
 			return err
 		}
 
-		nameb := make([]byte, e.metadata.nameLength)
+		nameb := make([]byte, e.fixedData.nameLength)
 		_, err = inFd.Read(nameb)
 		if err != nil {
 			return err
@@ -92,14 +92,14 @@ func extract(inFile string) error {
 		e.name = string(nameb)
 
 		switch {
-		case fs.FileMode(e.metadata.mode).IsDir():
+		case fs.FileMode(e.fixedData.mode).IsDir():
 			err = os.Mkdir(e.name, 0755)
 			if err != nil {
 				return err
 			}
 			continue
 
-		case fs.FileMode(e.metadata.mode)&fs.ModeSymlink != 0:
+		case fs.FileMode(e.fixedData.mode)&fs.ModeSymlink != 0:
 			var linkLen uint16
 			var link string
 			err = binary.Read(inFd, binary.BigEndian, &linkLen)
@@ -119,7 +119,7 @@ func extract(inFile string) error {
 				return err
 			}
 
-		case fs.FileMode(e.metadata.mode).IsRegular():
+		case fs.FileMode(e.fixedData.mode).IsRegular():
 			err = reflinkToFile(&e, inFd)
 			if err != nil {
 				return err

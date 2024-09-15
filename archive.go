@@ -23,7 +23,7 @@ func walker(header *header, p string, info fs.FileInfo, err error) error {
 	}
 
 	entry := entry{
-		metadata: metadata{
+		fixedData: fixedData{
 			mode:       uint32(info.Mode()),
 			nameLength: uint16(len(p)),
 		},
@@ -43,7 +43,7 @@ func walker(header *header, p string, info fs.FileInfo, err error) error {
 		fmt.Fprintln(os.Stderr, "Skipping", p)
 		return nil
 	case info.Mode().IsRegular():
-		entry.metadata.size = uint64(info.Size())
+		entry.fixedData.size = uint64(info.Size())
 	case info.Mode().IsDir():
 	case info.Mode()&fs.ModeSymlink != 0:
 		entry.link, err = os.Readlink(p)
@@ -56,7 +56,7 @@ func walker(header *header, p string, info fs.FileInfo, err error) error {
 	}
 
 	header.entries = append(header.entries, &entry)
-	header.size += uint64(entrySize+entry.metadata.nameLength) + uint64(extradata)
+	header.size += uint64(entrySize+entry.fixedData.nameLength) + uint64(extradata)
 
 	if *verbose {
 		fmt.Println(p)
@@ -101,10 +101,10 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 	for _, e := range header.entries {
 		var extradata int
 
-		if fs.FileMode(e.metadata.mode).IsRegular() {
-			e.metadata.offset = curpos
+		if fs.FileMode(e.fixedData.mode).IsRegular() {
+			e.fixedData.offset = curpos
 		}
-		err = binary.Write(out, binary.BigEndian, e.metadata)
+		err = binary.Write(out, binary.BigEndian, e.fixedData)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +114,7 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 			return nil, err
 		}
 
-		if fs.FileMode(e.metadata.mode)&fs.ModeSymlink != 0 {
+		if fs.FileMode(e.fixedData.mode)&fs.ModeSymlink != 0 {
 			err = binary.Write(out, binary.BigEndian, e.linkLen)
 			if err != nil {
 				return nil, err
@@ -128,10 +128,10 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 			extradata = 2 + int(e.linkLen)
 		}
 
-		curpos += e.metadata.size + uint64(extradata)
+		curpos += e.fixedData.size + uint64(extradata)
 		curpos = round4k(curpos)
 	}
-	eor := metadata{
+	eor := fixedData{
 		mode: EOR,
 	}
 	err = binary.Write(out, binary.BigEndian, eor)
@@ -173,12 +173,12 @@ func reflink(entry *entry, outFile *os.File) error {
 		return err
 	}
 
-	if entry.metadata.size != 0 && entry.metadata.size >= cowAlignment {
+	if entry.fixedData.size != 0 && entry.fixedData.size >= cowAlignment {
 		fcrange := unix.FileCloneRange{
 			Src_fd:      int64(in.Fd()),
 			Src_offset:  0,
-			Src_length:  entry.metadata.size & ^uint64(cowMask),
-			Dest_offset: entry.metadata.offset,
+			Src_length:  entry.fixedData.size & ^uint64(cowMask),
+			Dest_offset: entry.fixedData.offset,
 		}
 
 		err := unix.IoctlFileCloneRange(int(outFile.Fd()), &fcrange)
@@ -216,7 +216,7 @@ func archive(paths []string, outFile string) error {
 	}
 
 	for _, entry := range header.entries {
-		if fs.FileMode(entry.metadata.mode).IsRegular() {
+		if fs.FileMode(entry.fixedData.mode).IsRegular() {
 			err = reflink(entry, outFd)
 			if err != nil {
 				return err
