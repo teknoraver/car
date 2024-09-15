@@ -6,6 +6,7 @@ const cowAlignment = 4096
 const cowMask = cowAlignment - 1
 const cowMagic = "CAR!"
 const entrySize = 4 + 8 + 8 + 2
+const EOR = 0xffffffff
 
 type metadata struct {
 	mode       uint32

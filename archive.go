@@ -132,7 +132,7 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 		curpos = round4k(curpos)
 	}
 	eor := metadata{
-		mode: 0xffffffff,
+		mode: EOR,
 	}
 	err = binary.Write(out, binary.BigEndian, eor)
 	if err != nil {

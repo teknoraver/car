@@ -64,7 +64,7 @@ func extract(inFile string) error {
 		if err != nil {
 			return err
 		}
-		if e.metadata.mode == 0xffffffff {
+		if e.metadata.mode == EOR {
 			break
 		}
 
