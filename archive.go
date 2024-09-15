@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var zeroes = make([]byte, cowAlignment)
+
 func walker(header *header, p string, info fs.FileInfo, err error) error {
 	var extradata int
 
@@ -137,8 +139,7 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 		return nil, err
 	}
 
-	zeroes := make([]byte, padding)
-	_, err = out.Write(zeroes)
+	_, err = out.Write(zeroes[:padding])
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +156,7 @@ func copyTrail(in *os.File, out *os.File) error {
 	}
 
 	if written&cowMask != 0 {
-		zeroes := make([]byte, cowAlignment-written)
-		_, err = out.Write(zeroes)
+		_, err = out.Write(zeroes[:cowAlignment-written])
 		if err != nil {
 			return err
 		}
