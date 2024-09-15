@@ -23,7 +23,7 @@ type entry struct {
 }
 
 type header struct {
-	entries []entry
+	entries []*entry
 	size    uint64
 }
 
