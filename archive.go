@@ -14,7 +14,7 @@ import (
 
 var zeroes = make([]byte, cowAlignment)
 
-func walker(header *header, p string, info fs.FileInfo, err error) error {
+func walker(header *header, strip int, p string, info fs.FileInfo, err error) error {
 	var extradata int
 
 	if err != nil {
@@ -22,12 +22,17 @@ func walker(header *header, p string, info fs.FileInfo, err error) error {
 		return err
 	}
 
+	storedName := p[strip:]
+	if storedName[0] == '/' {
+		storedName = storedName[1:]
+	}
+
 	entry := entry{
 		fixedData: fixedData{
 			mode:       uint32(info.Mode()),
-			nameLength: uint16(len(p)),
+			nameLength: uint16(len(storedName)),
 		},
-		name: p,
+		name: storedName,
 	}
 
 	switch {
@@ -71,8 +76,9 @@ func genHeader(paths []string) *header {
 	}
 
 	for _, dir := range paths {
+		dir = filepath.Clean(dir)
 		filepath.Walk(dir, func(p string, i fs.FileInfo, err error) error {
-			return walker(&header, p, i, err)
+			return walker(&header, len(filepath.Dir(dir)), p, i, err)
 		})
 	}
 
