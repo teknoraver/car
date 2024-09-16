@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"io/fs"
 	"os"
 	"testing"
@@ -33,8 +34,11 @@ func fillFile(path string, mode int, c byte, size uint64) error {
 	}
 	defer f.Close()
 
+	f2 := bufio.NewWriter(f)
+	defer f2.Flush()
+
 	for i := uint64(0); i < size; i++ {
-		if _, err := f.Write([]byte{c}); err != nil {
+		if err := f2.WriteByte(c); err != nil {
 			return err
 		}
 	}
