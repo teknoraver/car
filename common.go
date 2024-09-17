@@ -17,9 +17,10 @@ type fixedData struct {
 
 type entry struct {
 	fixedData
-	name    string
-	link    string
-	linkLen uint16
+	name      string
+	localName string
+	link      string
+	linkLen   uint16
 }
 
 type header struct {

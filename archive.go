@@ -32,7 +32,8 @@ func walker(header *header, strip int, p string, info fs.FileInfo, err error) er
 			mode:       uint32(info.Mode()),
 			nameLength: uint16(len(storedName)),
 		},
-		name: storedName,
+		name:      storedName,
+		localName: p,
 	}
 
 	switch {
@@ -78,7 +79,11 @@ func genHeader(paths []string) *header {
 	for _, dir := range paths {
 		dir = filepath.Clean(dir)
 		filepath.Walk(dir, func(p string, i fs.FileInfo, err error) error {
-			return walker(&header, len(filepath.Dir(dir)), p, i, err)
+			topdir := filepath.Dir(dir)
+			if topdir == "." {
+				topdir = ""
+			}
+			return walker(&header, len(topdir), p, i, err)
 		})
 	}
 
@@ -172,7 +177,7 @@ func copyTrail(in *os.File, out *os.File) error {
 }
 
 func reflink(entry *entry, outFile *os.File) error {
-	in, err := os.Open(entry.name)
+	in, err := os.Open(entry.localName)
 	defer in.Close()
 
 	if err != nil {
