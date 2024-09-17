@@ -42,7 +42,7 @@ func reflinkToFile(e *entry, inFile *os.File) error {
 	return nil
 }
 
-func extract(inFile string) error {
+func (c *car) extract(inFile string) error {
 	inFd, err := os.Open(inFile)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func extract(inFile string) error {
 			}
 		}
 
-		if *verbose {
+		if *c.verbose {
 			fmt.Println(e.name)
 		}
 	}
