@@ -21,6 +21,7 @@ type entry struct {
 	localName string
 	link      string
 	linkLen   uint16
+	hash      uint64
 }
 
 type header struct {

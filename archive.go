@@ -123,17 +123,19 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 
 	for _, e := range header.entries {
 		var extradata int
+		var dup bool
 
-		if fs.FileMode(e.fixedData.mode).IsRegular() {
+		if fs.FileMode(e.fixedData.mode).IsRegular() && e.fixedData.size > 0 {
+			var clone *fixedData
 			hash, err := getHash(e.localName)
 			if err != nil {
 				return nil, err
 			}
-			if dup, ok := c.dupMap[hash]; ok {
-				e.fixedData.offset = dup.offset
+			if clone, dup = c.dupMap[hash]; dup {
+				e.offset = clone.offset
 			} else {
 				c.dupMap[hash] = &e.fixedData
-				e.fixedData.offset = curpos
+				e.offset = curpos
 			}
 		}
 		err = binary.Write(out, binary.BigEndian, e.fixedData)
@@ -160,8 +162,10 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 			extradata = 2 + int(e.linkLen)
 		}
 
-		curpos += e.fixedData.size + uint64(extradata)
-		curpos = round4k(curpos)
+		if !dup {
+			curpos += e.fixedData.size + uint64(extradata)
+			curpos = round4k(curpos)
+		}
 	}
 	eor := fixedData{
 		mode: EOR,
@@ -251,11 +255,14 @@ func (c *car) archive(paths []string, outFile string) error {
 		return err
 	}
 
+	var hashes map[uint64]struct{}
 	for _, entry := range header.entries {
 		if fs.FileMode(entry.fixedData.mode).IsRegular() && entry.fixedData.size > 0 {
-			err = c.reflink(entry, outFd)
-			if err != nil {
-				return err
+			if _, seen := hashes[entry.hash]; !seen {
+				err = c.reflink(entry, outFd)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

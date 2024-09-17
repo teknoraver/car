@@ -9,22 +9,28 @@ import (
 
 var testDir string
 
-var rightHeader = header{
-	size: 406,
-	entries: []*entry{
-		{fixedData: fixedData{mode: 020000000755, size: 0}, name: "dir1"},
-		{fixedData: fixedData{mode: 0644, size: 0}, name: "dir1/empty"},
-		{fixedData: fixedData{mode: 0755, size: 16}, name: "dir1/exe"},
-		{fixedData: fixedData{mode: 0600, size: 4300}, name: "dir1/private"},
-		{fixedData: fixedData{mode: 0444, size: 8300}, name: "dir1/readonly"},
-		{fixedData: fixedData{mode: 020000000755, size: 0}, name: "dir2"},
-		{fixedData: fixedData{mode: 0644, size: 200}, name: "dir2/200"},
-		{fixedData: fixedData{mode: 0644, size: 4096}, name: "dir2/4k"},
-		{fixedData: fixedData{mode: 0644, size: 4192}, name: "dir2/4k1"},
-		{fixedData: fixedData{mode: 020000000755, size: 0}, name: "dir2/subdir"},
-		{fixedData: fixedData{mode: 01000000777, size: 0}, name: "dir2/subdir/link", link: "../4k"},
-		{fixedData: fixedData{mode: 0644, size: 512}, name: "toplevel"},
-	},
+type testEntry struct {
+	name    string
+	mode    uint32
+	size    uint64
+	link    string
+	content byte
+}
+
+var headerSize = uint64(406)
+var rightHeader = []*testEntry{
+	{mode: 020000000755, size: 0, name: "dir1"},
+	{mode: 0644, size: 0, name: "dir1/empty"},
+	{mode: 0755, size: 16, name: "dir1/exe", content: 'x'},
+	{mode: 0600, size: 4300, name: "dir1/private", content: 'p'},
+	{mode: 0444, size: 8300, name: "dir1/readonly", content: 'r'},
+	{mode: 020000000755, size: 0, name: "dir2"},
+	{mode: 0644, size: 200, name: "dir2/200", content: '2'},
+	{mode: 0644, size: 4096, name: "dir2/4k", content: '4'},
+	{mode: 0644, size: 4192, name: "dir2/4k1", content: '1'},
+	{mode: 020000000755, size: 0, name: "dir2/subdir"},
+	{mode: 01000000777, size: 0, name: "dir2/subdir/link", link: "../4k"},
+	{mode: 0644, size: 512, name: "toplevel", content: 't'},
 }
 
 func fillFile(path string, mode int, c byte, size uint64) error {
@@ -46,7 +52,7 @@ func fillFile(path string, mode int, c byte, size uint64) error {
 	return nil
 }
 
-func makeEntry(e *entry, c byte) error {
+func makeEntry(e *testEntry) error {
 	if fs.FileMode(e.mode)&fs.ModeDir != 0 {
 		if err := os.Mkdir(testDir+"/"+e.name, os.FileMode(e.mode)); err != nil {
 			return err
@@ -56,7 +62,7 @@ func makeEntry(e *entry, c byte) error {
 			return err
 		}
 	} else {
-		if err := fillFile(testDir+"/"+e.name, int(e.mode), c, e.size); err != nil {
+		if err := fillFile(testDir+"/"+e.name, int(e.mode), e.content, e.size); err != nil {
 			return err
 		}
 	}
@@ -73,8 +79,8 @@ func testSetup(t *testing.T) (car, error) {
 
 	testDir = t.TempDir()
 
-	for i, e := range rightHeader.entries {
-		if err = makeEntry(e, 'A'+byte(i)); err != nil {
+	for _, e := range rightHeader {
+		if err = makeEntry(e); err != nil {
 			return car, err
 		}
 	}
@@ -97,23 +103,23 @@ func TestGenHeader(t *testing.T) {
 		t.Fatal("genHeader failed")
 	}
 
-	if header.size != rightHeader.size {
-		t.Error("Header size mismatch, expected", rightHeader.size, "got", header.size)
+	if header.size != headerSize {
+		t.Error("Header size mismatch, expected", headerSize, "got", header.size)
 	}
 
-	if len(header.entries) != len(rightHeader.entries) {
-		t.Error("Header entry count mismatch, expected", len(rightHeader.entries), ", got", len(header.entries))
+	if len(header.entries) != len(rightHeader) {
+		t.Error("Header entry count mismatch, expected", len(rightHeader), ", got", len(header.entries))
 	}
 
 	for i, v := range header.entries {
-		if v.name != rightHeader.entries[i].name {
-			t.Error("Entry name mismatch, expected", rightHeader.entries[i].name, "got", v.name)
+		if v.name != rightHeader[i].name {
+			t.Error("Entry name mismatch, expected", rightHeader[i].name, "got", v.name)
 		}
-		if v.size != rightHeader.entries[i].size {
-			t.Error("Entry size mismatch, expected", rightHeader.entries[i].size, "got", v.size)
+		if v.size != rightHeader[i].size {
+			t.Error("Entry size mismatch, expected", rightHeader[i].size, "got", v.size)
 		}
-		if v.mode != rightHeader.entries[i].mode {
-			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader.entries[i].mode, v.mode)
+		if v.mode != rightHeader[i].mode {
+			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader[i].mode, v.mode)
 		}
 	}
 }
