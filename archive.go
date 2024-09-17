@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
@@ -13,6 +14,7 @@ import (
 )
 
 var zeroes = make([]byte, cowAlignment)
+var dupMap = make(map[uint64]*fixedData)
 
 func walker(header *header, strip int, p string, info fs.FileInfo, err error) error {
 	var extradata int
@@ -93,6 +95,19 @@ func genHeader(paths []string) *header {
 	return &header
 }
 
+func getHash(path string) (uint64, error) {
+	hash := fnv.New64a()
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	io.Copy(hash, file)
+
+	return hash.Sum64(), nil
+}
+
 func writeHeader(paths []string, outFd *os.File) (*header, error) {
 	header := genHeader(paths)
 	var padding uint64
@@ -113,7 +128,16 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 		var extradata int
 
 		if fs.FileMode(e.fixedData.mode).IsRegular() {
-			e.fixedData.offset = curpos
+			hash, err := getHash(e.localName)
+			if err != nil {
+				return nil, err
+			}
+			if dup, ok := dupMap[hash]; ok {
+				e.fixedData.offset = dup.offset
+			} else {
+				dupMap[hash] = &e.fixedData
+				e.fixedData.offset = curpos
+			}
 		}
 		err = binary.Write(out, binary.BigEndian, e.fixedData)
 		if err != nil {
