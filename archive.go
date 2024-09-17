@@ -48,7 +48,7 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 		fmt.Fprintln(os.Stderr, "Skipping", p)
 		return nil
 	case info.Mode().IsRegular():
-		entry.fixedData.size = uint64(info.Size())
+		entry.size = uint64(info.Size())
 	case info.Mode().IsDir():
 	case info.Mode()&fs.ModeSymlink != 0:
 		entry.link, err = os.Readlink(p)
@@ -61,7 +61,7 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 	}
 
 	header.entries = append(header.entries, &entry)
-	header.size += uint64(entrySize+entry.fixedData.nameLength) + uint64(extradata)
+	header.size += uint64(entrySize+entry.nameLength) + uint64(extradata)
 
 	if *c.verbose {
 		fmt.Println(p)
@@ -125,7 +125,7 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 		var extradata int
 		var dup bool
 
-		if fs.FileMode(e.fixedData.mode).IsRegular() && e.fixedData.size > 0 {
+		if fs.FileMode(e.mode).IsRegular() && e.size > 0 {
 			var clone *fixedData
 			hash, err := getHash(e.localName)
 			if err != nil {
@@ -148,7 +148,7 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 			return nil, err
 		}
 
-		if fs.FileMode(e.fixedData.mode)&fs.ModeSymlink != 0 {
+		if fs.FileMode(e.mode)&fs.ModeSymlink != 0 {
 			err = binary.Write(out, binary.BigEndian, e.linkLen)
 			if err != nil {
 				return nil, err
@@ -163,7 +163,7 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 		}
 
 		if !dup {
-			curpos += e.fixedData.size + uint64(extradata)
+			curpos += e.size + uint64(extradata)
 			curpos = round4k(curpos)
 		}
 	}
@@ -209,12 +209,12 @@ func (c *car) reflink(entry *entry, outFile *os.File) error {
 		return err
 	}
 
-	if entry.fixedData.size >= cowAlignment {
+	if entry.size >= cowAlignment {
 		fcrange := unix.FileCloneRange{
 			Src_fd:      int64(in.Fd()),
 			Src_offset:  0,
-			Src_length:  entry.fixedData.size & ^uint64(cowMask),
-			Dest_offset: entry.fixedData.offset,
+			Src_length:  entry.size & ^uint64(cowMask),
+			Dest_offset: entry.offset,
 		}
 
 		err := unix.IoctlFileCloneRange(int(outFile.Fd()), &fcrange)
@@ -234,7 +234,7 @@ func (c *car) reflink(entry *entry, outFile *os.File) error {
 		}
 	}
 
-	if entry.fixedData.size&cowMask != 0 {
+	if entry.size&cowMask != 0 {
 		return c.copyTrail(in, outFile)
 	}
 
@@ -257,7 +257,7 @@ func (c *car) archive(paths []string, outFile string) error {
 
 	var hashes map[uint64]struct{}
 	for _, entry := range header.entries {
-		if fs.FileMode(entry.fixedData.mode).IsRegular() && entry.fixedData.size > 0 {
+		if fs.FileMode(entry.mode).IsRegular() && entry.size > 0 {
 			if _, seen := hashes[entry.hash]; !seen {
 				err = c.reflink(entry, outFd)
 				if err != nil {
