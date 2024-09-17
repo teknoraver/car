@@ -73,7 +73,7 @@ func makeEntry(e *testEntry) error {
 func testSetup(t *testing.T) (car, error) {
 	var err error
 	var car = car{
-		dupMap:  make(map[uint64]*fixedData),
+		dupMap:  map[uint64]*fixedData{},
 		verbose: new(bool),
 	}
 

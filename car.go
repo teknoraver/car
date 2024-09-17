@@ -26,7 +26,7 @@ func main() {
 	}
 
 	var a archive = &car{
-		dupMap:  make(map[uint64]*fixedData),
+		dupMap:  map[uint64]*fixedData{},
 		verbose: verbose,
 	}
 
