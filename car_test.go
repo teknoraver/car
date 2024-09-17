@@ -64,27 +64,31 @@ func makeEntry(e *entry, c byte) error {
 	return nil
 }
 
-func testSetup(t *testing.T) error {
+func testSetup(t *testing.T) (car, error) {
 	var err error
-	verbose = new(bool)
+	var car = car{
+		dupMap:  make(map[uint64]*fixedData),
+		verbose: new(bool),
+	}
 
 	testDir = t.TempDir()
 
 	for i, e := range rightHeader.entries {
 		if err = makeEntry(e, 'A'+byte(i)); err != nil {
-			return err
+			return car, err
 		}
 	}
 
-	return nil
+	return car, nil
 }
 
 func TestGenHeader(t *testing.T) {
-	if err := testSetup(t); err != nil {
+	c, err := testSetup(t)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	header := genHeader([]string{
+	header := c.genHeader([]string{
 		testDir + "/dir1",
 		testDir + "/dir2/",
 		testDir + "//toplevel"},

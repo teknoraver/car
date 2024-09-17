@@ -13,10 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var zeroes = make([]byte, cowAlignment)
-var dupMap = make(map[uint64]*fixedData)
-
-func walker(header *header, strip int, p string, info fs.FileInfo, err error) error {
+func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err error) error {
 	var extradata int
 
 	if err != nil {
@@ -66,14 +63,14 @@ func walker(header *header, strip int, p string, info fs.FileInfo, err error) er
 	header.entries = append(header.entries, &entry)
 	header.size += uint64(entrySize+entry.fixedData.nameLength) + uint64(extradata)
 
-	if *verbose {
+	if *c.verbose {
 		fmt.Println(p)
 	}
 
 	return nil
 }
 
-func genHeader(paths []string) *header {
+func (c *car) genHeader(paths []string) *header {
 	header := header{
 		size: 4,
 	}
@@ -85,7 +82,7 @@ func genHeader(paths []string) *header {
 			if topdir == "." {
 				topdir = ""
 			}
-			return walker(&header, len(topdir), p, i, err)
+			return c.walker(&header, len(topdir), p, i, err)
 		})
 	}
 
@@ -108,8 +105,8 @@ func getHash(path string) (uint64, error) {
 	return hash.Sum64(), nil
 }
 
-func writeHeader(paths []string, outFd *os.File) (*header, error) {
-	header := genHeader(paths)
+func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
+	header := c.genHeader(paths)
 	var padding uint64
 
 	padding = cowAlignment - (header.size & cowMask)
@@ -132,10 +129,10 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 			if err != nil {
 				return nil, err
 			}
-			if dup, ok := dupMap[hash]; ok {
+			if dup, ok := c.dupMap[hash]; ok {
 				e.fixedData.offset = dup.offset
 			} else {
-				dupMap[hash] = &e.fixedData
+				c.dupMap[hash] = &e.fixedData
 				e.fixedData.offset = curpos
 			}
 		}
@@ -184,7 +181,7 @@ func writeHeader(paths []string, outFd *os.File) (*header, error) {
 	return header, nil
 }
 
-func copyTrail(in *os.File, out *os.File) error {
+func (c *car) copyTrail(in *os.File, out *os.File) error {
 	written, err := io.Copy(out, in)
 	if err != nil {
 		return err
@@ -200,7 +197,7 @@ func copyTrail(in *os.File, out *os.File) error {
 	return nil
 }
 
-func reflink(entry *entry, outFile *os.File) error {
+func (c *car) reflink(entry *entry, outFile *os.File) error {
 	in, err := os.Open(entry.localName)
 	defer in.Close()
 
@@ -234,13 +231,13 @@ func reflink(entry *entry, outFile *os.File) error {
 	}
 
 	if entry.fixedData.size&cowMask != 0 {
-		return copyTrail(in, outFile)
+		return c.copyTrail(in, outFile)
 	}
 
 	return nil
 }
 
-func archive(paths []string, outFile string) error {
+func (c *car) archive(paths []string, outFile string) error {
 	outFd, err := os.Create(outFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error creating output file", outFile, err)
@@ -248,7 +245,7 @@ func archive(paths []string, outFile string) error {
 	}
 	defer outFd.Close()
 
-	header, err := writeHeader(paths, outFd)
+	header, err := c.writeHeader(paths, outFd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error writing header", err)
 		return err
@@ -256,7 +253,7 @@ func archive(paths []string, outFile string) error {
 
 	for _, entry := range header.entries {
 		if fs.FileMode(entry.fixedData.mode).IsRegular() && entry.fixedData.size > 0 {
-			err = reflink(entry, outFd)
+			err = c.reflink(entry, outFd)
 			if err != nil {
 				return err
 			}
