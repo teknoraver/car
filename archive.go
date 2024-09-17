@@ -105,8 +105,7 @@ func getHash(path string) (uint64, error) {
 	return hash.Sum64(), nil
 }
 
-func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
-	header := c.genHeader(paths)
+func (c *car) writeHeader(header *header, outFd *os.File) error {
 	var padding uint64
 
 	padding = cowAlignment - (header.size & cowMask)
@@ -118,7 +117,7 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 	_, err := out.Write([]byte(cowMagic))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Write error:", err)
-		return nil, err
+		return err
 	}
 
 	for _, e := range header.entries {
@@ -129,7 +128,7 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 			var clone *fixedData
 			hash, err := getHash(e.localName)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if clone, dup = c.dupMap[hash]; dup {
 				e.offset = clone.offset
@@ -140,23 +139,23 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 		}
 		err = binary.Write(out, binary.BigEndian, e.fixedData)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		_, err = out.WriteString(e.name)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if fs.FileMode(e.mode)&fs.ModeSymlink != 0 {
 			err = binary.Write(out, binary.BigEndian, e.linkLen)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			_, err = out.WriteString(e.link)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			extradata = 2 + int(e.linkLen)
@@ -172,17 +171,17 @@ func (c *car) writeHeader(paths []string, outFd *os.File) (*header, error) {
 	}
 	err = binary.Write(out, binary.BigEndian, eor)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	_, err = out.Write(zeroes[:padding])
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	out.Flush()
 
-	return header, nil
+	return nil
 }
 
 func (c *car) copyTrail(in *os.File, out *os.File) error {
@@ -249,7 +248,9 @@ func (c *car) archive(paths []string, outFile string) error {
 	}
 	defer outFd.Close()
 
-	header, err := c.writeHeader(paths, outFd)
+	header := c.genHeader(paths)
+
+	err = c.writeHeader(header, outFd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error writing header", err)
 		return err
