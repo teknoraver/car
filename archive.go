@@ -179,7 +179,7 @@ func reflink(entry *entry, outFile *os.File) error {
 		return err
 	}
 
-	if entry.fixedData.size != 0 && entry.fixedData.size >= cowAlignment {
+	if entry.fixedData.size >= cowAlignment {
 		fcrange := unix.FileCloneRange{
 			Src_fd:      int64(in.Fd()),
 			Src_offset:  0,
@@ -204,7 +204,11 @@ func reflink(entry *entry, outFile *os.File) error {
 		}
 	}
 
-	return copyTrail(in, outFile)
+	if entry.fixedData.size&cowMask != 0 {
+		return copyTrail(in, outFile)
+	}
+
+	return nil
 }
 
 func archive(paths []string, outFile string) error {
@@ -222,7 +226,7 @@ func archive(paths []string, outFile string) error {
 	}
 
 	for _, entry := range header.entries {
-		if fs.FileMode(entry.fixedData.mode).IsRegular() {
+		if fs.FileMode(entry.fixedData.mode).IsRegular() && entry.fixedData.size > 0 {
 			err = reflink(entry, outFd)
 			if err != nil {
 				return err
