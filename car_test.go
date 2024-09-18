@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"testing"
@@ -19,7 +20,7 @@ type testEntry struct {
 	content byte
 }
 
-var headerSize = uint64(406)
+var headerSize = uint64(449)
 var rightHeader = []*testEntry{
 	{mode: 020000000755, size: 0, name: "dir1"},
 	{mode: 0644, size: 0, name: "dir1/empty"},
@@ -30,6 +31,7 @@ var rightHeader = []*testEntry{
 	{mode: 0644, size: 200, name: "dir2/200", content: '2'},
 	{mode: 0644, size: 4096, name: "dir2/4k", content: '4'},
 	{mode: 0644, size: 4192, name: "dir2/4k1", content: '1'},
+	{mode: 0644, size: 8300, name: "dir2/copy_of_readonly"},
 	{mode: 020000000755, size: 0, name: "dir2/subdir"},
 	{mode: 01000000777, size: 0, name: "dir2/subdir/link", link: "../4k"},
 	{mode: 0644, size: 512, name: "toplevel", content: 't'},
@@ -72,6 +74,23 @@ func makeEntry(e *testEntry) error {
 	return nil
 }
 
+func copyFile(src, dst string) error {
+	srcFd, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFd.Close()
+
+	dstFd, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(dstFd, srcFd)
+
+	return err
+}
+
 func testSetup(t *testing.T) (car, error) {
 	var err error
 	var car = car{
@@ -87,7 +106,9 @@ func testSetup(t *testing.T) (car, error) {
 		}
 	}
 
-	return car, nil
+	err = copyFile(testDir+"/dir1/readonly", testDir+"/dir2/copy_of_readonly")
+
+	return car, err
 }
 
 func TestGenHeader(t *testing.T) {
@@ -152,6 +173,8 @@ func parseHeader(path string) error {
 		return fmt.Errorf("Header magic mismatch, expected '%s' got '%s'", cowMagic, magic)
 	}
 
+	var offset uint64
+
 	for i := 0; ; i++ {
 		var entry entry
 		if err = binary.Read(headerReader, binary.BigEndian, &entry.fixedData); err != nil {
@@ -183,6 +206,17 @@ func parseHeader(path string) error {
 			return fmt.Errorf("Entry size mismatch, expected %d got %d", e.size, entry.Size)
 		}
 
+		/* File dir1/readonly is identical to dir2/copy_of_readonly,
+		 * check that the data offset is the same
+		 */
+		if name == "dir1/readonly" {
+			offset = entry.Offset
+		} else if name == "dir2/copy_of_readonly" {
+			if entry.Offset != offset {
+				return fmt.Errorf("Entry offset mismatch, expected %d got %d", offset, entry.Offset)
+			}
+		}
+
 		if fs.FileMode(entry.Mode)&fs.ModeSymlink != 0 {
 			err = binary.Read(headerReader, binary.BigEndian, &entry.linkLen)
 			if err != nil {
@@ -197,6 +231,7 @@ func parseHeader(path string) error {
 			}
 		}
 	}
+
 	n, err := headerReader.Read(buf)
 	if err != nil {
 		return err
