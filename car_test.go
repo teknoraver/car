@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io/fs"
 	"os"
 	"testing"
@@ -121,5 +122,65 @@ func TestGenHeader(t *testing.T) {
 		if v.mode != rightHeader[i].mode {
 			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader[i].mode, v.mode)
 		}
+	}
+}
+
+func parseHeader(path string) error {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if fileInfo.Size() != int64(0x1000) {
+		return fmt.Errorf("Header size mismatch, expected 4kb got %v", fileInfo.Size())
+	}
+
+	outFd, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer outFd.Close()
+
+	buf := make([]byte, 0x1000)
+	if _, err = outFd.Read(buf[:4]); err != nil {
+		return err
+	}
+	if magic := string(buf[:4]); magic != cowMagic {
+		return fmt.Errorf("Header magic mismatch, expected %v got %v", cowMagic, magic)
+	}
+
+	return nil
+}
+
+func TestWriteHeader(t *testing.T) {
+	c, err := testSetup(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	header := c.genHeader([]string{
+		testDir + "/dir1",
+		testDir + "/dir2",
+		testDir + "/toplevel"},
+	)
+	if header == nil {
+		t.Fatal("genHeader failed")
+	}
+
+	outDir := t.TempDir()
+	outDir = "."
+	outFd, err := os.Create(outDir + "/test.car")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outFd.Close()
+
+	if err = c.writeHeader(header, outFd); err != nil {
+		t.Fatal(err)
+	}
+	outFd.Close()
+
+	if err = parseHeader(outDir + "/test.car"); err != nil {
+		t.Fatal(err)
 	}
 }
