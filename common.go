@@ -9,10 +9,10 @@ const EOR = 0xffffffff
 var zeroes = make([]byte, cowAlignment)
 
 type fixedData struct {
-	mode       uint32
-	offset     uint64
-	size       uint64
-	nameLength uint16
+	Mode       uint32
+	Offset     uint64
+	Size       uint64
+	NameLength uint16
 }
 
 type entry struct {
@@ -26,7 +26,7 @@ type entry struct {
 
 type header struct {
 	entries []*entry
-	size    uint64
+	Size    uint64
 }
 
 type archive interface {
@@ -39,6 +39,6 @@ type car struct {
 	verbose *bool
 }
 
-func round4k(size uint64) uint64 {
-	return ((size - 1) | 0xfff) + 1
+func round4k(Size uint64) uint64 {
+	return ((Size - 1) | 0xfff) + 1
 }

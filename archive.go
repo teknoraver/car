@@ -28,8 +28,8 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 
 	entry := entry{
 		fixedData: fixedData{
-			mode:       uint32(info.Mode()),
-			nameLength: uint16(len(storedName)),
+			Mode:       uint32(info.Mode()),
+			NameLength: uint16(len(storedName)),
 		},
 		name:      storedName,
 		localName: p,
@@ -48,7 +48,7 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 		fmt.Fprintln(os.Stderr, "Skipping", p)
 		return nil
 	case info.Mode().IsRegular():
-		entry.size = uint64(info.Size())
+		entry.Size = uint64(info.Size())
 	case info.Mode().IsDir():
 	case info.Mode()&fs.ModeSymlink != 0:
 		entry.link, err = os.Readlink(p)
@@ -61,7 +61,7 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 	}
 
 	header.entries = append(header.entries, &entry)
-	header.size += uint64(entrySize+entry.nameLength) + uint64(extradata)
+	header.Size += uint64(entrySize+entry.NameLength) + uint64(extradata)
 
 	if *c.verbose {
 		fmt.Println(p)
@@ -72,7 +72,7 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 
 func (c *car) genHeader(paths []string) *header {
 	header := header{
-		size: 4,
+		Size: 4,
 	}
 
 	for _, dir := range paths {
@@ -87,7 +87,7 @@ func (c *car) genHeader(paths []string) *header {
 	}
 
 	// Trailing EOR
-	header.size += entrySize
+	header.Size += entrySize
 
 	return &header
 }
@@ -108,9 +108,9 @@ func getHash(path string) (uint64, error) {
 func (c *car) writeHeader(header *header, outFd *os.File) error {
 	var padding uint64
 
-	padding = cowAlignment - (header.size & cowMask)
-	header.size = round4k(header.size)
-	curpos := header.size
+	padding = cowAlignment - (header.Size & cowMask)
+	header.Size = round4k(header.Size)
+	curpos := header.Size
 
 	out := bufio.NewWriter(outFd)
 
@@ -124,17 +124,17 @@ func (c *car) writeHeader(header *header, outFd *os.File) error {
 		var extradata int
 		var dup bool
 
-		if fs.FileMode(e.mode).IsRegular() && e.size > 0 {
+		if fs.FileMode(e.Mode).IsRegular() && e.Size > 0 {
 			var clone *fixedData
 			hash, err := getHash(e.localName)
 			if err != nil {
 				return err
 			}
 			if clone, dup = c.dupMap[hash]; dup {
-				e.offset = clone.offset
+				e.Offset = clone.Offset
 			} else {
 				c.dupMap[hash] = &e.fixedData
-				e.offset = curpos
+				e.Offset = curpos
 			}
 		}
 		err = binary.Write(out, binary.BigEndian, e.fixedData)
@@ -147,7 +147,7 @@ func (c *car) writeHeader(header *header, outFd *os.File) error {
 			return err
 		}
 
-		if fs.FileMode(e.mode)&fs.ModeSymlink != 0 {
+		if fs.FileMode(e.Mode)&fs.ModeSymlink != 0 {
 			err = binary.Write(out, binary.BigEndian, e.linkLen)
 			if err != nil {
 				return err
@@ -162,12 +162,12 @@ func (c *car) writeHeader(header *header, outFd *os.File) error {
 		}
 
 		if !dup {
-			curpos += e.size + uint64(extradata)
+			curpos += e.Size + uint64(extradata)
 			curpos = round4k(curpos)
 		}
 	}
 	eor := fixedData{
-		mode: EOR,
+		Mode: EOR,
 	}
 	err = binary.Write(out, binary.BigEndian, eor)
 	if err != nil {
@@ -208,12 +208,12 @@ func (c *car) reflink(entry *entry, outFile *os.File) error {
 		return err
 	}
 
-	if entry.size >= cowAlignment {
+	if entry.Size >= cowAlignment {
 		fcrange := unix.FileCloneRange{
 			Src_fd:      int64(in.Fd()),
 			Src_offset:  0,
-			Src_length:  entry.size & ^uint64(cowMask),
-			Dest_offset: entry.offset,
+			Src_length:  entry.Size & ^uint64(cowMask),
+			Dest_offset: entry.Offset,
 		}
 
 		err := unix.IoctlFileCloneRange(int(outFile.Fd()), &fcrange)
@@ -233,7 +233,7 @@ func (c *car) reflink(entry *entry, outFile *os.File) error {
 		}
 	}
 
-	if entry.size&cowMask != 0 {
+	if entry.Size&cowMask != 0 {
 		return c.copyTrail(in, outFile)
 	}
 
@@ -258,7 +258,7 @@ func (c *car) archive(paths []string, outFile string) error {
 
 	var hashes map[uint64]struct{}
 	for _, entry := range header.entries {
-		if fs.FileMode(entry.mode).IsRegular() && entry.size > 0 {
+		if fs.FileMode(entry.Mode).IsRegular() && entry.Size > 0 {
 			if _, seen := hashes[entry.hash]; !seen {
 				err = c.reflink(entry, outFd)
 				if err != nil {

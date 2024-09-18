@@ -104,8 +104,8 @@ func TestGenHeader(t *testing.T) {
 		t.Fatal("genHeader failed")
 	}
 
-	if header.size != headerSize {
-		t.Error("Header size mismatch, expected", headerSize, "got", header.size)
+	if header.Size != headerSize {
+		t.Error("Header size mismatch, expected", headerSize, "got", header.Size)
 	}
 
 	if len(header.entries) != len(rightHeader) {
@@ -116,11 +116,11 @@ func TestGenHeader(t *testing.T) {
 		if v.name != rightHeader[i].name {
 			t.Error("Entry name mismatch, expected", rightHeader[i].name, "got", v.name)
 		}
-		if v.size != rightHeader[i].size {
-			t.Error("Entry size mismatch, expected", rightHeader[i].size, "got", v.size)
+		if v.Size != rightHeader[i].size {
+			t.Error("Entry size mismatch, expected", rightHeader[i].size, "got", v.Size)
 		}
-		if v.mode != rightHeader[i].mode {
-			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader[i].mode, v.mode)
+		if v.Mode != rightHeader[i].mode {
+			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader[i].mode, v.Mode)
 		}
 	}
 }
