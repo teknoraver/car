@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io/fs"
 	"os"
@@ -132,21 +133,79 @@ func parseHeader(path string) error {
 	}
 
 	if fileInfo.Size() != int64(0x1000) {
-		return fmt.Errorf("Header size mismatch, expected 4kb got %v", fileInfo.Size())
+		return fmt.Errorf("Header size mismatch, expected 4kb got %d", fileInfo.Size())
 	}
 
-	outFd, err := os.Open(path)
+	headerFd, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer outFd.Close()
+	defer headerFd.Close()
+
+	headerReader := bufio.NewReader(headerFd)
 
 	buf := make([]byte, 0x1000)
-	if _, err = outFd.Read(buf[:4]); err != nil {
+	if _, err = headerReader.Read(buf[:4]); err != nil {
 		return err
 	}
 	if magic := string(buf[:4]); magic != cowMagic {
-		return fmt.Errorf("Header magic mismatch, expected %v got %v", cowMagic, magic)
+		return fmt.Errorf("Header magic mismatch, expected '%s' got '%s'", cowMagic, magic)
+	}
+
+	for i := 0; ; i++ {
+		var entry entry
+		if err = binary.Read(headerReader, binary.BigEndian, &entry.fixedData); err != nil {
+			return err
+		}
+		if entry.Mode == EOR {
+			break
+		}
+
+		if i >= len(rightHeader) {
+			return fmt.Errorf("Header entry count mismatch, expected %d got %d", len(rightHeader), i)
+		}
+
+		_, err = headerReader.Read(buf[:entry.NameLength])
+		if err != nil {
+			return err
+		}
+
+		name := string(buf[:entry.NameLength])
+		e := rightHeader[i]
+
+		if entry.Mode != e.mode {
+			return fmt.Errorf("Entry mode mismatch, expected %o got %o", e.mode, entry.Mode)
+		}
+		if name != e.name {
+			return fmt.Errorf("Entry name mismatch, expected %s got %s", e.name, name)
+		}
+		if entry.Size != e.size {
+			return fmt.Errorf("Entry size mismatch, expected %d got %d", e.size, entry.Size)
+		}
+
+		if fs.FileMode(entry.Mode)&fs.ModeSymlink != 0 {
+			err = binary.Read(headerReader, binary.BigEndian, &entry.linkLen)
+			if err != nil {
+				return err
+			}
+			_, err = headerReader.Read(buf[:entry.linkLen])
+			if err != nil {
+				return err
+			}
+			if link := string(buf[:entry.linkLen]); link != e.link {
+				return fmt.Errorf("Entry link mismatch, expected %s got %s", e.link, link)
+			}
+		}
+	}
+	n, err := headerReader.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range buf[:n] {
+		if v != 0 {
+			return fmt.Errorf("Garbage data found in header padding: %x", v)
+		}
 	}
 
 	return nil
