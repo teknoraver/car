@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err error) error {
+func (c *car) walker(strip int, p string, info fs.FileInfo, err error) error {
 	var extradata int
 
 	if err != nil {
@@ -60,8 +60,8 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 		extradata = 2 + int(entry.linkLen)
 	}
 
-	header.entries = append(header.entries, &entry)
-	header.Size += uint64(entrySize+entry.NameLength) + uint64(extradata)
+	c.header.entries = append(c.header.entries, &entry)
+	c.header.Size += uint64(entrySize+entry.NameLength) + uint64(extradata)
 
 	if *c.verbose {
 		fmt.Println(p)
@@ -70,26 +70,26 @@ func (c *car) walker(header *header, strip int, p string, info fs.FileInfo, err 
 	return nil
 }
 
-func (c *car) genHeader(paths []string) *header {
-	header := header{
-		Size: 4,
-	}
+func (c *car) genHeader(paths []string) error {
+	c.header.Size = 4
 
 	for _, dir := range paths {
 		dir = filepath.Clean(dir)
-		filepath.Walk(dir, func(p string, i fs.FileInfo, err error) error {
+		err := filepath.Walk(dir, func(p string, i fs.FileInfo, err error) error {
 			topdir := filepath.Dir(dir)
 			if topdir == "." {
 				topdir = ""
 			}
-			return c.walker(&header, len(topdir), p, i, err)
+			return c.walker(len(topdir), p, i, err)
 		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// Trailing EOR
-	header.Size += entrySize
-
-	return &header
+	c.header.Size += entrySize
+	return nil
 }
 
 func getHash(path string) (uint64, error) {
@@ -105,12 +105,12 @@ func getHash(path string) (uint64, error) {
 	return hash.Sum64(), nil
 }
 
-func (c *car) writeHeader(header *header, outFd *os.File) error {
+func (c *car) writeHeader(outFd *os.File) error {
 	var padding uint64
 
-	padding = cowAlignment - (header.Size & cowMask)
-	header.Size = round4k(header.Size)
-	curpos := header.Size
+	padding = cowAlignment - (c.header.Size & cowMask)
+	c.header.Size = round4k(c.header.Size)
+	curpos := c.header.Size
 
 	out := bufio.NewWriter(outFd)
 
@@ -120,7 +120,7 @@ func (c *car) writeHeader(header *header, outFd *os.File) error {
 		return err
 	}
 
-	for _, e := range header.entries {
+	for _, e := range c.header.entries {
 		var extradata int
 		var dup bool
 
@@ -248,16 +248,20 @@ func (c *car) archive(paths []string, outFile string) error {
 	}
 	defer outFd.Close()
 
-	header := c.genHeader(paths)
+	err = c.genHeader(paths)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error generating headers for paths:", paths, err)
+		return err
+	}
 
-	err = c.writeHeader(header, outFd)
+	err = c.writeHeader(outFd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error writing header", err)
 		return err
 	}
 
 	var hashes map[uint64]struct{}
-	for _, entry := range header.entries {
+	for _, entry := range c.header.entries {
 		if fs.FileMode(entry.Mode).IsRegular() && entry.Size > 0 {
 			if _, seen := hashes[entry.hash]; !seen {
 				err = c.reflink(entry, outFd)
