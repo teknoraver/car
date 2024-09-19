@@ -37,6 +37,7 @@ type archive interface {
 type car struct {
 	dupMap  map[uint64]*fixedData
 	verbose *bool
+	header  header
 }
 
 func round4k(Size uint64) uint64 {

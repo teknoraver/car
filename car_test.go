@@ -117,24 +117,24 @@ func TestGenHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	header := c.genHeader([]string{
+	err = c.genHeader([]string{
 		testDir + "/dir1",
 		testDir + "/dir2/",
 		testDir + "//toplevel"},
 	)
-	if header == nil {
+	if err != nil {
 		t.Fatal("genHeader failed")
 	}
 
-	if header.Size != headerSize {
-		t.Error("Header size mismatch, expected", headerSize, "got", header.Size)
+	if c.header.Size != headerSize {
+		t.Error("Header size mismatch, expected", headerSize, "got", c.header.Size)
 	}
 
-	if len(header.entries) != len(rightHeader) {
-		t.Error("Header entry count mismatch, expected", len(rightHeader), ", got", len(header.entries))
+	if len(c.header.entries) != len(rightHeader) {
+		t.Error("Header entry count mismatch, expected", len(rightHeader), ", got", len(c.header.entries))
 	}
 
-	for i, v := range header.entries {
+	for i, v := range c.header.entries {
 		if v.name != rightHeader[i].name {
 			t.Error("Entry name mismatch, expected", rightHeader[i].name, "got", v.name)
 		}
@@ -269,7 +269,7 @@ func TestWriteHeader(t *testing.T) {
 	}
 	defer outFd.Close()
 
-	if err = c.writeHeader(header, outFd); err != nil {
+	if err = c.writeHeader(outFd); err != nil {
 		t.Fatal(err)
 	}
 	outFd.Close()
