@@ -252,12 +252,12 @@ func TestWriteHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	header := c.genHeader([]string{
+	err = c.genHeader([]string{
 		testDir + "/dir1",
 		testDir + "/dir2",
 		testDir + "/toplevel"},
 	)
-	if header == nil {
+	if err != nil {
 		t.Fatal("genHeader failed")
 	}
 
