@@ -40,6 +40,6 @@ type car struct {
 	header  header
 }
 
-func round4k(Size uint64) uint64 {
-	return ((Size - 1) | 0xfff) + 1
+func round4k(size uint64) uint64 {
+	return (size + cowMask) & ^uint64(cowMask)
 }
