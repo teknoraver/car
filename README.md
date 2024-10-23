@@ -1,5 +1,5 @@
 # CAR - Copy-on-write Archive
-`car` is a tool to create and extract archives without copying data. This is possible by using the filesystem capabilities to reflink data from and to the archive.  
+`car` is a tool to create and extract archives without copying data. This is possible by using the filesystem capabilities to reflink data from and to the archive.
 A filesystem with [reflink](https://man7.org/linux/man-pages/man2/ioctl_ficlone.2.html) support is needed, like [BtrFS](https://docs.kernel.org/filesystems/btrfs.html) or [XFS](https://xfs.wiki.kernel.org/).
 ## Usage
 `car` mimics the syntax of the glorious `tar` tool, so to create an archive, we do:
@@ -104,63 +104,24 @@ $ perf stat car -x -f software.car
        0.004706000 seconds sys
 ```
 ## File format
-The archive is composed by the magic word `CAR!`, the header and the payload with the file data.  
-The header is a list of entries, each one with a fixed part and a variable part:  
-The fixed part contains the file type and permissions, the offset of the payload inside the archive, the file size length of the file name.  
-The variable part contains the file name and, if the file is a symlink, the target of the link along its length.  
-The header end is signaled by a special entry with mode 0xFFFFFFFF.  
-The payload contains the file data. Reflinking only works on a fileystem block boundary, so every file content is aligned to 4 Kb. Reflink only works with full sectors, so if the file size is not multiple of 4 Kb, ther remainder is copied manually.
-
-```
-+----------------+
-|     CAR!       |
-+----------------+
-|     Entry 1    |
-+----------------+
-|     Entry 2    |
-+----------------+
-|      ...       |
-+----------------+
-|     Entry N    |
-+----------------+
-|    0xFFFFFFFF  |
-+----------------+
-|    Payload 1   |
-+----------------+
-|    Payload 2   |
-+----------------+
-|      ...       |
-+----------------+
-|    Payload N   |
-+----------------+
-```
-
-Every entry have the following format, where every line is a 2 byte word:
-```
-+----------------+
-|     Mode       |
-|                |
-+----------------+
-|                |
-|     Offset     |
-|                |
-|                |
-+----------------+
-|                |
-|     Size       |
-|                |
-|                |
-+----------------+
-|   Name Length  |
-|                |
-+----------------+
-|     Name       |
-|     ...        |
-+----------------+
-| Target Length  |
-|                |
-+----------------+
-|    Target      |
-|    ...         |
-+----------------+
-```
+The archive is composed by a list of entries, each one representing a file.
+An entry is composed by a list of [TLV (Type-Length-Value)](https://en.wikipedia.org/wiki/Type%E2%80%93length%E2%80%93value) fields, where the type is a 2 byte word, the length is a 2 byte word and the value is a variable length field.
+The list of types are:
+1. Header (0x0001)  
+*Mandatory*, contains the following fields:
+* uint32 file mode, which in turn contains the file type in the first bits and the permissions in the lowest 12 bits.
+* uint32 User ID
+* uint32 Group ID
+* uint64 Modification time (nanoseconds since epoch)
+2. Name (0x0002)  
+*Mandatory*, contains the name of the file, as a string.
+3. Data (0x0003)  
+*Mandatory*, must be the last field, contains:  
+uint64 the file size.
+4. Link target (0x0004)  
+Contains the target of a symlink, as a string.
+5. Device (0x0005)  
+uint32 contains the major and minor numbers, Mandatory for block and character devices.
+6. Padding (0x0006)  
+Contains a variable length padding used to align the next entry to a specified boundary. Must be ignored.
+After the last tag, which must be 'Data', there is the fiel content
