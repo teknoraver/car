@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -20,7 +18,6 @@ type testEntry struct {
 	content byte
 }
 
-var headerSize = uint64(449)
 var rightHeader = []*testEntry{
 	{mode: 020000000755, size: 0, name: "dir1"},
 	{mode: 0644, size: 0, name: "dir1/empty"},
@@ -94,8 +91,7 @@ func copyFile(src, dst string) error {
 func testSetup(t *testing.T) (car, error) {
 	var err error
 	var car = car{
-		dupMap:  map[uint64]*fixedData{},
-		verbose: new(bool),
+		verbose: false,
 	}
 
 	testDir = t.TempDir()
@@ -111,170 +107,26 @@ func testSetup(t *testing.T) (car, error) {
 	return car, err
 }
 
-func TestGenHeader(t *testing.T) {
-	c, err := testSetup(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = c.genHeader([]string{
-		testDir + "/dir1",
-		testDir + "/dir2/",
-		testDir + "//toplevel"},
-	)
-	if err != nil {
-		t.Fatal("genHeader failed")
-	}
-
-	if c.header.Size != headerSize {
-		t.Error("Header size mismatch, expected", headerSize, "got", c.header.Size)
-	}
-
-	if len(c.header.entries) != len(rightHeader) {
-		t.Error("Header entry count mismatch, expected", len(rightHeader), ", got", len(c.header.entries))
-	}
-
-	for i, v := range c.header.entries {
-		if v.name != rightHeader[i].name {
-			t.Error("Entry name mismatch, expected", rightHeader[i].name, "got", v.name)
-		}
-		if v.Size != rightHeader[i].size {
-			t.Error("Entry size mismatch, expected", rightHeader[i].size, "got", v.Size)
-		}
-		if v.Mode != rightHeader[i].mode {
-			t.Errorf("Entry mode mismatch, expected %o got %o", rightHeader[i].mode, v.Mode)
-		}
-	}
-}
-
-func parseHeader(path string) error {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-
-	if fileInfo.Size() != int64(0x1000) {
-		return fmt.Errorf("Header size mismatch, expected 4kb got %d", fileInfo.Size())
-	}
-
-	headerFd, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer headerFd.Close()
-
-	headerReader := bufio.NewReader(headerFd)
-
-	buf := make([]byte, 0x1000)
-	if _, err = headerReader.Read(buf[:4]); err != nil {
-		return err
-	}
-	if magic := string(buf[:4]); magic != cowMagic {
-		return fmt.Errorf("Header magic mismatch, expected '%s' got '%s'", cowMagic, magic)
-	}
-
-	var offset uint64
-
-	for i := 0; ; i++ {
-		var entry entry
-		if err = binary.Read(headerReader, binary.BigEndian, &entry.fixedData); err != nil {
-			return err
-		}
-		if entry.Mode == EOR {
-			break
-		}
-
-		if i >= len(rightHeader) {
-			return fmt.Errorf("Header entry count mismatch, expected %d got %d", len(rightHeader), i)
-		}
-
-		_, err = headerReader.Read(buf[:entry.NameLength])
-		if err != nil {
-			return err
-		}
-
-		name := string(buf[:entry.NameLength])
-		e := rightHeader[i]
-
-		if entry.Mode != e.mode {
-			return fmt.Errorf("Entry mode mismatch, expected %o got %o", e.mode, entry.Mode)
-		}
-		if name != e.name {
-			return fmt.Errorf("Entry name mismatch, expected %s got %s", e.name, name)
-		}
-		if entry.Size != e.size {
-			return fmt.Errorf("Entry size mismatch, expected %d got %d", e.size, entry.Size)
-		}
-
-		/* File dir1/readonly is identical to dir2/copy_of_readonly,
-		 * check that the data offset is the same
-		 */
-		if name == "dir1/readonly" {
-			offset = entry.Offset
-		} else if name == "dir2/copy_of_readonly" {
-			if entry.Offset != offset {
-				return fmt.Errorf("Entry offset mismatch, expected %d got %d", offset, entry.Offset)
-			}
-		}
-
-		if fs.FileMode(entry.Mode)&fs.ModeSymlink != 0 {
-			err = binary.Read(headerReader, binary.BigEndian, &entry.linkLen)
-			if err != nil {
-				return err
-			}
-			_, err = headerReader.Read(buf[:entry.linkLen])
-			if err != nil {
-				return err
-			}
-			if link := string(buf[:entry.linkLen]); link != e.link {
-				return fmt.Errorf("Entry link mismatch, expected %s got %s", e.link, link)
-			}
-		}
-	}
-
-	n, err := headerReader.Read(buf)
-	if err != nil {
-		return err
-	}
-
-	for _, v := range buf[:n] {
-		if v != 0 {
-			return fmt.Errorf("Garbage data found in header padding: %x", v)
-		}
-	}
-
-	return nil
-}
-
 func TestWriteHeader(t *testing.T) {
 	c, err := testSetup(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = c.genHeader([]string{
-		testDir + "/dir1",
-		testDir + "/dir2",
-		testDir + "/toplevel"},
-	)
-	if err != nil {
-		t.Fatal("genHeader failed")
-	}
-
-	outDir := t.TempDir()
-	outDir = "."
-	outFd, err := os.Create(outDir + "/test.car")
+	err = c.archive([]string{testDir}, "test.car")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer outFd.Close()
+}
 
-	if err = c.writeHeader(outFd); err != nil {
+func TestExtract(t *testing.T) {
+	c, err := testSetup(t)
+	if err != nil {
 		t.Fatal(err)
 	}
-	outFd.Close()
 
-	if err = parseHeader(outDir + "/test.car"); err != nil {
+	err = c.extract("test.car")
+	if err != nil {
 		t.Fatal(err)
 	}
 }

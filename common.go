@@ -1,32 +1,48 @@
 package main
 
+import "io"
+
 const cowAlignment = 4096
 const cowMask = cowAlignment - 1
 const cowMagic = "CAR!"
-const entrySize = 4 + 8 + 8 + 2
-const EOR = 0xffffffff
+const cowEnd = "!RAC"
 
-var zeroes = make([]byte, cowAlignment)
+const (
+	tagHeader uint16 = iota + 1
+	tagName
+	tagData
+	tagLinkTarget
+	tagDevice
+)
 
 type fixedData struct {
-	Mode       uint32
-	Offset     uint64
-	Size       uint64
-	NameLength uint16
+	Mode  uint32
+	Uid   uint32
+	Gid   uint32
+	Mtime int64
 }
 
 type entry struct {
 	fixedData
 	name      string
+	size      uint64
 	localName string
 	link      string
-	linkLen   uint16
-	hash      uint64
+	dev       uint32
 }
 
-type header struct {
-	entries []*entry
+/*
+Just a TLV (Type, Length, Value) structure,
+but "type" is a reserved word in Go
+*/
+type tag struct {
+	Tag    uint16
+	Length uint16
+}
+
+type paddedData struct {
 	Size    uint64
+	Padding uint32
 }
 
 type archive interface {
@@ -35,9 +51,11 @@ type archive interface {
 }
 
 type car struct {
-	dupMap  map[uint64]*fixedData
-	verbose *bool
-	header  header
+	verbose   bool
+	list      bool
+	error     int
+	infoFd    io.Writer
+	superUser bool
 }
 
 func round4k(size uint64) uint64 {
