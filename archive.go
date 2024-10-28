@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -69,7 +70,10 @@ func (c *car) writeData(out *os.File, e entry) error {
 	}
 	defer in.Close()
 
-	reflinkToArchive(in, out, e.size)
+	err = reflinkToArchive(in, out, e.size)
+	if err != nil && !errors.Is(err, reflinkError) {
+		return err
+	}
 
 	_, err = io.Copy(out, in)
 

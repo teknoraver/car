@@ -107,7 +107,7 @@ func (c *car) extractFile(archive *os.File, e entry, mode fs.FileMode) error {
 	}
 
 	err = reflinkFromArchive(archive, f, e.size)
-	if err != nil {
+	if err != nil && errors.Is(err, reflinkError) {
 		_, err = io.CopyN(f, archive, int64(e.size))
 	}
 

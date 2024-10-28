@@ -1,6 +1,9 @@
 package main
 
-import "io"
+import (
+	"errors"
+	"io"
+)
 
 const cowAlignment = 4096
 const cowMask = cowAlignment - 1
@@ -57,6 +60,8 @@ type car struct {
 	infoFd    io.Writer
 	superUser bool
 }
+
+var reflinkError = errors.New("reflink not supported")
 
 func round4k(size uint64) uint64 {
 	return (size + cowMask) & ^uint64(cowMask)
