@@ -12,30 +12,30 @@ var testDir string
 
 type testEntry struct {
 	name    string
-	mode    uint32
+	mode    fs.FileMode
 	size    uint64
 	link    string
 	content byte
 }
 
-var rightHeader = []*testEntry{
-	{mode: 020000000755, size: 0, name: "dir1"},
-	{mode: 0644, size: 0, name: "dir1/empty"},
-	{mode: 0755, size: 16, name: "dir1/exe", content: 'x'},
-	{mode: 0600, size: 4300, name: "dir1/private", content: 'p'},
-	{mode: 0444, size: 8300, name: "dir1/readonly", content: 'r'},
-	{mode: 020000000755, size: 0, name: "dir2"},
-	{mode: 0644, size: 200, name: "dir2/200", content: '2'},
-	{mode: 0644, size: 4096, name: "dir2/4k", content: '4'},
-	{mode: 0644, size: 4192, name: "dir2/4k1", content: '1'},
-	{mode: 0644, size: 8300, name: "dir2/copy_of_readonly"},
-	{mode: 020000000755, size: 0, name: "dir2/subdir"},
-	{mode: 01000000777, size: 0, name: "dir2/subdir/link", link: "../4k"},
-	{mode: 0644, size: 512, name: "toplevel", content: 't'},
+var testEntries = []*testEntry{
+	{mode: 0o755 | fs.ModeDir, size: 0, name: "dir1"},
+	{mode: 0o644, size: 0, name: "dir1/empty"},
+	{mode: 0o755, size: 16, name: "dir1/exe", content: 'x'},
+	{mode: 0o600, size: 4300, name: "dir1/private", content: 'p'},
+	{mode: 0o444, size: 8300, name: "dir1/readonly", content: 'r'},
+	{mode: 0o755 | fs.ModeDir, size: 0, name: "dir2"},
+	{mode: 0o644, size: 200, name: "dir2/200", content: '2'},
+	{mode: 0o644, size: 4096, name: "dir2/4k", content: '4'},
+	{mode: 0o644, size: 4192, name: "dir2/4k1", content: '1'},
+	{mode: 0o644, size: 8300, name: "dir2/copy_of_readonly"},
+	{mode: 0o755 | fs.ModeDir, size: 0, name: "dir2/subdir"},
+	{mode: 0o777 | fs.ModeSymlink, size: 0, name: "dir2/subdir/link", link: "../4k"},
+	{mode: 0o644, size: 512, name: "toplevel", content: 't'},
 }
 
-func fillFile(path string, mode int, c byte, size uint64) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, os.FileMode(mode))
+func fillFile(path string, mode fs.FileMode, c byte, size uint64) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
@@ -54,16 +54,17 @@ func fillFile(path string, mode int, c byte, size uint64) error {
 }
 
 func makeEntry(e *testEntry) error {
-	if fs.FileMode(e.mode)&fs.ModeDir != 0 {
-		if err := os.Mkdir(testDir+"/"+e.name, os.FileMode(e.mode)); err != nil {
+	switch {
+	case e.mode.IsDir():
+		if err := os.Mkdir(testDir+"/create/"+e.name, e.mode); err != nil {
 			return err
 		}
-	} else if fs.FileMode(e.mode)&fs.ModeSymlink != 0 {
-		if err := os.Symlink(e.link, testDir+"/"+e.name); err != nil {
+	case e.mode&fs.ModeSymlink != 0:
+		if err := os.Symlink(e.link, testDir+"/create/"+e.name); err != nil {
 			return err
 		}
-	} else {
-		if err := fillFile(testDir+"/"+e.name, int(e.mode), e.content, e.size); err != nil {
+	default:
+		if err := fillFile(testDir+"/create/"+e.name, e.mode, e.content, e.size); err != nil {
 			return err
 		}
 	}
@@ -88,45 +89,68 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func testSetup(t *testing.T) (car, error) {
+func testSetup(t *testing.T) error {
 	var err error
-	var car = car{
-		verbose: false,
-	}
 
 	testDir = t.TempDir()
+	err = os.Mkdir(testDir+"/create", 0o755)
+	if err != nil {
+		return err
+	}
 
-	for _, e := range rightHeader {
+	for _, e := range testEntries {
 		if err = makeEntry(e); err != nil {
-			return car, err
+			return err
 		}
 	}
 
-	err = copyFile(testDir+"/dir1/readonly", testDir+"/dir2/copy_of_readonly")
+	err = copyFile(testDir+"/create/dir1/readonly", testDir+"/create/dir2/copy_of_readonly")
 
-	return car, err
+	return err
 }
 
-func TestWriteHeader(t *testing.T) {
-	c, err := testSetup(t)
-	if err != nil {
-		t.Fatal(err)
-	}
+func testCreate(t *testing.T) {
+	c := car{}
 
-	err = c.archive([]string{testDir}, "test.car")
+	err := c.archive([]string{testDir + "/create"}, testDir+"/test.car")
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestExtract(t *testing.T) {
-	c, err := testSetup(t)
+func testList(t *testing.T) {
+	c := car{
+		list: true,
+	}
+
+	oldStdout := os.Stdout
+
+	os.Stdout, _ = os.Open(os.DevNull)
+	err := c.extract(testDir + "/test.car")
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testExtract(t *testing.T) {
+	c := car{}
+
+	err := c.extract(testDir + "/test.car")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCar(t *testing.T) {
+	err := testSetup(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = c.extract("test.car")
-	if err != nil {
-		t.Fatal(err)
+	if t.Run("Create", testCreate) {
+		t.Run("List", testList)
+		t.Run("Extract", testExtract)
 	}
 }
