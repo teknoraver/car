@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"io/fs"
 )
 
 const cowAlignment = 4096
@@ -53,12 +54,18 @@ type archive interface {
 	extract(inFile string) error
 }
 
+type dirMode struct {
+	name string
+	mode fs.FileMode
+}
+
 type car struct {
 	verbose   bool
 	list      bool
 	error     int
 	infoFd    io.Writer
 	superUser bool
+	dirModes  []dirMode
 }
 
 var reflinkError = errors.New("reflink not supported")

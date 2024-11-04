@@ -129,9 +129,19 @@ func (c *car) extractEntry(archive *os.File, e entry) error {
 	case unix.S_IFREG:
 		err = c.extractFile(archive, e, fsFileMode)
 	case unix.S_IFDIR:
+		modeSet := fs.FileMode(e.Mode & 0o7777)
+		if modeSet&0o300 != 0o300 {
+			/* A directory can have no write or execute permissions, yet contain files. To correctly
+			 * extract files inside, set permissions to 0300 now and defer the real permission set. */
+			c.dirModes = append(c.dirModes, dirMode{e.name, modeSet})
+			modeSet = 0o300
+		}
 		/* os.MkdirAll() never returns error on exist. If directory
 		 * already exists, ignore it and just change permission later */
-		err = os.MkdirAll(e.name, fsFileMode)
+		err = os.Mkdir(e.name, fsFileMode|modeSet)
+		if errors.Is(err, os.ErrExist) {
+			err = nil
+		}
 	case unix.S_IFLNK:
 		err = os.Symlink(e.link, e.name)
 	case unix.S_IFBLK, unix.S_IFCHR:
@@ -278,6 +288,16 @@ tagLoop:
 	return &e, nil
 }
 
+func (c *car) deferredPermissions() error {
+	for i := len(c.dirModes) - 1; i >= 0; i-- {
+		err := os.Chmod(c.dirModes[i].name, c.dirModes[i].mode)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *car) extract(file string) error {
 	var err error
 	archive := os.Stdin
@@ -300,10 +320,13 @@ func (c *car) extract(file string) error {
 	for {
 		_, err = c.parseEntry(archive)
 		if err == io.EOF {
-			return nil
+			break
 		}
 		if err != nil {
 			return err
 		}
 	}
+
+	return c.deferredPermissions()
+
 }
