@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -116,6 +118,17 @@ func (c *car) extractFile(archive *os.File, e entry, mode fs.FileMode) error {
 
 func (c *car) extractEntry(archive *os.File, e entry) error {
 	var err, reterr error
+
+	realPath, err := filepath.EvalSymlinks(filepath.Dir(c.destDir + "/" + e.name))
+	if err != nil {
+		return err
+	}
+
+	if !strings.HasPrefix(realPath, c.destDir) {
+		fmt.Fprintf(os.Stderr, "skipping '%s' because its real path '%s' is outside target directory\n", e.name, realPath)
+		_, err = archive.Seek(int64(e.size), io.SeekCurrent)
+		return err
+	}
 
 	mode := uint32(e.Mode & 0o777)
 	fsFileMode := fs.FileMode(mode)
@@ -315,6 +328,16 @@ func (c *car) extract(file string) error {
 		defer archive.Close()
 
 		c.infoFd = os.Stdout
+	}
+
+	c.destDir, err = os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	c.destDir, err = filepath.EvalSymlinks(c.destDir)
+	if err != nil {
+		return err
 	}
 
 	for {

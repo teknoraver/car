@@ -66,6 +66,7 @@ type car struct {
 	infoFd    io.Writer
 	superUser bool
 	dirModes  []dirMode
+	destDir   string
 }
 
 var reflinkError = errors.New("reflink not supported")
