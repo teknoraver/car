@@ -38,30 +38,33 @@ func (c *car) writeData(out *os.File, e entry) error {
 		return c.writeTag(tagData, 0, out, nil)
 	}
 
-	offset, err := out.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-
-	// tag + paddedData
-	const overhead = 4 + 12
-	newDataOffset := round4k(uint64(offset + overhead))
-	padding := newDataOffset - uint64(offset+overhead)
-
 	pd := paddedData{
-		Size:    e.size,
-		Padding: uint32(padding),
+		Size: e.size,
 	}
 
-	err = c.writeTag(tagData, 12, out, &pd)
-	if err != nil {
-		return err
-	}
+	// To add padding, we need to know the current offset, so the file must be seekable
+	if offset, err := out.Seek(0, io.SeekCurrent); err == nil {
+		// tag + paddedData
+		const overhead = 4 + 12
+		newDataOffset := round4k(uint64(offset + overhead))
+		padding := newDataOffset - uint64(offset+overhead)
 
-	//_, err = out.Seek(int64(padding), io.SeekCurrent)
-	_, err = out.Write(zeroes[:padding])
-	if err != nil {
-		return err
+		pd.Padding = uint32(padding)
+
+		err = c.writeTag(tagData, 12, out, &pd)
+		if err != nil {
+			return err
+		}
+
+		_, err = out.Seek(int64(padding), io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+	} else {
+		err = c.writeTag(tagData, 12, out, &pd)
+		if err != nil {
+			return err
+		}
 	}
 
 	in, err := os.Open(e.localName)
@@ -249,6 +252,13 @@ func (c *car) archive(paths []string, outFile string) error {
 		c.infoFd = os.Stdout
 	}
 
+	_, err = outFd.Seek(0, io.SeekCurrent)
+	if err == nil {
+		c.seekable = true
+	} else {
+		fmt.Fprintln(os.Stderr, "Warning: archive is not seekable, padding will be disabled")
+	}
+
 	err = c.walkPaths(paths, outFd)
 	if err != nil {
 		return err
@@ -259,12 +269,17 @@ func (c *car) archive(paths []string, outFile string) error {
 		return err
 	}
 
-	offset, err := outFd.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
+	if c.seekable {
+		offset, err := outFd.Seek(0, io.SeekEnd)
+		if err != nil {
+			return err
+		}
+		err = outFd.Truncate(int64(round4k(uint64(offset))))
+	} else {
+		// As we don't know the cursor position, write the maximum alignment
+		buf := make([]byte, cowAlignment)
+		_, err = outFd.Write(buf)
 	}
-
-	err = outFd.Truncate(int64(round4k(uint64(offset))))
 
 	return err
 }
