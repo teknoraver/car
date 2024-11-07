@@ -17,6 +17,24 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func (c *car) safeRSeek(file *os.File, offset int64) error {
+	var err error
+	if c.seekable {
+		_, err = file.Seek(offset, io.SeekCurrent)
+	} else {
+		buf := make([]byte, 64*1024)
+		var n int
+		for offset > 0 {
+			n, err = file.Read(buf[:min(len(buf), int(offset))])
+			if err != nil {
+				break
+			}
+			offset -= int64(n)
+		}
+	}
+	return err
+}
+
 func prettySize(size uint64) string {
 	units := "KMGTPE"
 	const unit = 1024
@@ -126,8 +144,7 @@ func (c *car) extractEntry(archive *os.File, e entry) error {
 
 	if !strings.HasPrefix(realPath, c.destDir) {
 		fmt.Fprintf(os.Stderr, "skipping '%s' because its real path '%s' is outside target directory\n", e.name, realPath)
-		_, err = archive.Seek(int64(e.size), io.SeekCurrent)
-		return err
+		return c.safeRSeek(archive, int64(e.size))
 	}
 
 	mode := uint32(e.Mode & 0o777)
@@ -264,7 +281,7 @@ tagLoop:
 					return nil, err
 				}
 				e.size = pd.Size
-				_, err = archive.Seek(int64(pd.Padding), io.SeekCurrent)
+				err = c.safeRSeek(archive, int64(pd.Padding))
 				if err != nil {
 					return nil, err
 				}
@@ -285,7 +302,7 @@ tagLoop:
 
 	if c.list {
 		if e.size > 0 {
-			_, err = archive.Seek(int64(e.size), io.SeekCurrent)
+			err = c.safeRSeek(archive, int64(e.size))
 			if err != nil {
 				return nil, err
 			}
@@ -338,6 +355,13 @@ func (c *car) extract(file string) error {
 	c.destDir, err = filepath.EvalSymlinks(c.destDir)
 	if err != nil {
 		return err
+	}
+
+	_, err = archive.Seek(0, io.SeekCurrent)
+	if err == nil {
+		c.seekable = true
+	} else {
+		fmt.Fprintln(os.Stderr, "Warning: archive is not seekable")
 	}
 
 	for {

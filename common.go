@@ -67,6 +67,7 @@ type car struct {
 	superUser bool
 	dirModes  []dirMode
 	destDir   string
+	seekable  bool
 }
 
 var reflinkError = errors.New("reflink not supported")
