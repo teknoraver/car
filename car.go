@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	if b(*t)+b(*c)+b(*x) != 1 {
-		fmt.Fprintln(os.Stderr, "Exactly one ption -t, -c or -x must be specified")
+		fmt.Fprintln(os.Stderr, "Exactly one option -t, -c or -x must be specified")
 		os.Exit(1)
 	}
 
