@@ -291,6 +291,11 @@ tagLoop:
 			break tagLoop
 		default:
 			fmt.Fprintf(os.Stderr, "unknown tag: 0x%x\n", tag.Tag)
+			/* Skip the value so an unknown (e.g. future) tag does not desync the parser */
+			err = c.safeRSeek(archive, int64(tag.Length))
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
