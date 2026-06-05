@@ -225,7 +225,7 @@ func (c *car) extractEntry(archive *os.File, e entry) error {
 func (c *car) parseEntry(archive *os.File) (*entry, error) {
 	buf := make([]byte, 4)
 
-	_, err := archive.Read(buf[:4])
+	_, err := io.ReadFull(archive, buf[:4])
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ tagLoop:
 			}
 		case tagName:
 			buf := make([]byte, tag.Length)
-			_, err := archive.Read(buf)
+			_, err := io.ReadFull(archive, buf)
 			if err != nil {
 				return nil, err
 			}
@@ -263,7 +263,7 @@ tagLoop:
 
 		case tagLinkTarget:
 			buf := make([]byte, tag.Length)
-			_, err := archive.Read(buf)
+			_, err := io.ReadFull(archive, buf)
 			if err != nil {
 				return nil, err
 			}
