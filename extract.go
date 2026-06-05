@@ -219,6 +219,21 @@ func (c *car) extractEntry(archive *os.File, e entry) error {
 		}
 	}
 
+	/* Restore the modification time. A directory mtime is bumped every time a
+	 * child is created, so defer it until all the contents are extracted. */
+	if e.Mode&unix.S_IFMT == unix.S_IFDIR {
+		c.dirTimes = append(c.dirTimes, dirTime{e.name, e.Mtime})
+	} else {
+		err = setTimes(e.name, e.Mtime)
+		if err != nil {
+			c.error = 1
+			fmt.Fprintf(os.Stderr, "can't set mtime: %v\n", err)
+			if reterr == nil {
+				reterr = err
+			}
+		}
+	}
+
 	return reterr
 }
 
@@ -333,6 +348,19 @@ func (c *car) deferredPermissions() error {
 	return nil
 }
 
+/* deferredTimes restores directory modification times after their contents and
+ * permissions have been set. Errors are not fatal. */
+func (c *car) deferredTimes() error {
+	for i := len(c.dirTimes) - 1; i >= 0; i-- {
+		err := setTimes(c.dirTimes[i].name, c.dirTimes[i].mtime)
+		if err != nil {
+			c.error = 1
+			fmt.Fprintf(os.Stderr, "can't set mtime: %v\n", err)
+		}
+	}
+	return nil
+}
+
 func (c *car) extract(file string) error {
 	var err error
 	archive := os.Stdin
@@ -379,6 +407,10 @@ func (c *car) extract(file string) error {
 		}
 	}
 
-	return c.deferredPermissions()
+	err = c.deferredPermissions()
+	if err != nil {
+		return err
+	}
 
+	return c.deferredTimes()
 }

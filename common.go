@@ -59,6 +59,11 @@ type dirMode struct {
 	mode fs.FileMode
 }
 
+type dirTime struct {
+	name  string
+	mtime int64
+}
+
 type car struct {
 	verbose   bool
 	list      bool
@@ -66,6 +71,7 @@ type car struct {
 	infoFd    io.Writer
 	superUser bool
 	dirModes  []dirMode
+	dirTimes  []dirTime
 	destDir   string
 	seekable  bool
 }
