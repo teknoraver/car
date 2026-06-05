@@ -219,6 +219,19 @@ func (c *car) extractEntry(archive *os.File, e entry) error {
 		}
 	}
 
+	/* Restore xattrs (including ACLs and security attributes) after chown and
+	 * chmod, which both clear the security.capability attribute. */
+	for _, x := range e.xattrs {
+		err = setXattr(e.name, x.name, x.value)
+		if err != nil {
+			c.error = 1
+			fmt.Fprintf(os.Stderr, "can't set xattr %s: %v\n", x.name, err)
+			if reterr == nil {
+				reterr = err
+			}
+		}
+	}
+
 	/* Restore the modification time. A directory mtime is bumped every time a
 	 * child is created, so defer it until all the contents are extracted. */
 	if e.Mode&unix.S_IFMT == unix.S_IFDIR {
@@ -288,6 +301,22 @@ tagLoop:
 			if err != nil {
 				return nil, err
 			}
+		case tagXattr:
+			buf := make([]byte, tag.Length)
+			_, err := io.ReadFull(archive, buf)
+			if err != nil {
+				return nil, err
+			}
+			if len(buf) < 2 {
+				return nil, errors.New("bad xattr field")
+			}
+			nameLen := int(binary.BigEndian.Uint16(buf[:2]))
+			if 2+nameLen > len(buf) {
+				return nil, errors.New("bad xattr name length")
+			}
+			name := string(buf[2 : 2+nameLen])
+			value := append([]byte(nil), buf[2+nameLen:]...)
+			e.xattrs = append(e.xattrs, xattr{name, value})
 		case tagData:
 			if tag.Length == 12 {
 				var pd paddedData

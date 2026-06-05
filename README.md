@@ -19,6 +19,11 @@ dir/b_4k
 dir/c_4k10
 dir/link
 ```
+To also store extended attributes, POSIX ACLs and security attributes (SELinux labels, file capabilities), pass `--xattrs` when creating the archive:
+```
+$ car -c --xattrs -f dir.car dir
+```
+They are always restored on extraction when present in the archive.
 ## Benchmark
 The following benchmark was done on a BtrFS filesystem with a 6.10 aarch64 kernel.
 
@@ -123,6 +128,11 @@ The list of types are:
 Contains the target of a symlink, as a string.
 5. Device (0x0005)  
 uint32 contains the major and minor numbers, Mandatory for block and character devices.
+6. Xattr (0x0006)  
+An extended attribute. It may appear multiple times, once per attribute, and if present must come before the Data tag. On Linux this also carries POSIX ACLs and security attributes (SELinux labels, capabilities), as they are all exposed as xattrs. It contains:
+* uint16 the length of the attribute name
+* the attribute name
+* the attribute value (its length is the tag length minus the name length and the two leading bytes)
 
 After the last tag, which must be 'Data', there is the padding and the file content.  
 After the last entry there is the magic written in backwards (`!RAC`) to signal the end of the archive. The archive must be padded with zero bytes so that its length is a multiple of 4k. This is required otherwise the reflink operation will fail when extracting the last entries.

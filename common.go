@@ -17,6 +17,7 @@ const (
 	tagData
 	tagLinkTarget
 	tagDevice
+	tagXattr
 )
 
 type fixedData struct {
@@ -33,6 +34,17 @@ type entry struct {
 	localName string
 	link      string
 	dev       uint32
+	xattrs    []xattr
+}
+
+/*
+An extended attribute. On Linux this also carries POSIX ACLs
+(system.posix_acl_*) and security attributes (security.selinux,
+security.capability), as they are all exposed as xattrs.
+*/
+type xattr struct {
+	name  string
+	value []byte
 }
 
 /*
@@ -67,6 +79,7 @@ type dirTime struct {
 type car struct {
 	verbose   bool
 	list      bool
+	xattrs    bool
 	error     int
 	infoFd    io.Writer
 	superUser bool

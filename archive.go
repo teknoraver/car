@@ -33,6 +33,33 @@ func (c *car) writeTag(tagType, length uint16, out *os.File, data any) error {
 	return nil
 }
 
+/*
+writeXattrTag writes a single xattr as a TLV whose value is:
+uint16 name length, the name, then the value (its length is implied
+by the tag length). Returns false without writing if it does not fit
+the 16 bit tag length.
+*/
+func (c *car) writeXattrTag(out *os.File, x xattr) (bool, error) {
+	const nameLenSize = 2
+	length := nameLenSize + len(x.name) + len(x.value)
+	if length > 0xffff {
+		return false, nil
+	}
+
+	err := c.writeTag(tagXattr, uint16(length), out, uint16(len(x.name)))
+	if err != nil {
+		return false, err
+	}
+
+	_, err = out.Write([]byte(x.name))
+	if err != nil {
+		return false, err
+	}
+
+	_, err = out.Write(x.value)
+	return true, err
+}
+
 func (c *car) writeData(out *os.File, e entry) error {
 	if e.size == 0 || e.Mode&unix.S_IFMT != unix.S_IFREG {
 		return c.writeTag(tagData, 0, out, nil)
@@ -112,6 +139,18 @@ func (c *car) writeHeader(out *os.File, e entry) error {
 		err = c.writeTag(tagDevice, 4, out, e.dev)
 		if err != nil {
 			return err
+		}
+	}
+
+	/* Xattr tags must come before the data tag, which has to be the last one */
+	for _, x := range e.xattrs {
+		ok, err := c.writeXattrTag(out, x)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			c.error = 1
+			fmt.Fprintf(os.Stderr, "skipping xattr %s of %s: too big\n", x.name, e.name)
 		}
 	}
 
@@ -207,6 +246,14 @@ func (c *car) walker(strip int, p string, statinfo fs.FileInfo, err error, outFd
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error reading symlink", p, err)
 			return nil
+		}
+	}
+
+	if c.xattrs {
+		entry.xattrs, err = listXattrs(p)
+		if err != nil {
+			c.error = 1
+			fmt.Fprintln(os.Stderr, "Error reading xattrs", p, err)
 		}
 	}
 

@@ -21,6 +21,7 @@ func main() {
 	x := flag.Bool("x", false, "extract")
 	file := flag.String("f", "", "file")
 	verbose := flag.Bool("v", false, "verbose")
+	xattrs := flag.Bool("xattrs", false, "store xattrs, ACLs and security attributes")
 	flag.Parse()
 
 	if b(*t)+b(*c)+b(*x) != 1 {
@@ -31,6 +32,7 @@ func main() {
 	var a archive = &car{
 		verbose: *verbose,
 		list:    *t,
+		xattrs:  *xattrs,
 	}
 
 	switch {
